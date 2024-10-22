@@ -3,6 +3,12 @@
 #include <string>
 #include <curl/curl.h>
 
+// Callback function to write response data into a std::string
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
 KeepClient::KeepClient(const std::string& clientId, const std::string& clientSecret)
     : clientId_(clientId), clientSecret_(clientSecret), curl_(curl_easy_init()) {}
 
@@ -17,13 +23,16 @@ bool KeepClient::authenticate(const std::string& username, const std::string& pa
     std::string authHeader = "Content-Type: application/x-www-form-urlencoded";
 
     // Send the authentication request
+    std::string authCode;
     curl_easy_setopt(curl_, CURLOPT_URL, authUrl.c_str());
     curl_easy_setopt(curl_, CURLOPT_POSTFIELDS, authBody.c_str());
-    curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, authHeader.c_str());
+    curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &authCode);
+    struct curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, authHeader.c_str());
+    curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
 
     // Get the authorization code
-    char* authCode;
-    curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &authCode);
     CURLcode res = curl_easy_perform(curl_);
     if (res != CURLE_OK) {
         std::cerr << "Authentication failed: " << curl_easy_strerror(res) << std::endl;
@@ -41,7 +50,7 @@ bool KeepClient::authenticate(const std::string& username, const std::string& pa
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, tokenHeader.c_str());
 
     // Get the access token
-    char* accessToken;
+    std::string accessToken;
     curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &accessToken);
     res = curl_easy_perform(curl_);
     if (res != CURLE_OK) {
